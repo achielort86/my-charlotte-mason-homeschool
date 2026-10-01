@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#6b7d62"><title>My Charlotte Mason Homeschool</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root{--ink:#273127;--muted:#667064;--paper:#fffdf8;--sage:#6b7d62;--cream:#f2eadb;--line:#ded8cb}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f2ea;color:var(--ink)}
+button,input,textarea{font:inherit}button{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;background:var(--sage);color:white;font-weight:600}
+.hidden{display:none!important}.top{background:var(--sage);color:white;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}.top h1{font-size:20px;margin:0}
+.layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 68px)}nav{background:#fff;padding:18px;border-right:1px solid var(--line)}
+nav button{display:block;width:100%;margin:7px 0;text-align:left;background:#f3f0e8;color:var(--ink)}nav button.active{background:var(--sage);color:white}
+main{padding:24px;max-width:1200px;width:100%;margin:auto}.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px #00000008}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.stat{font-size:28px;font-weight:800}.muted{color:var(--muted)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.lesson{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:14px;margin:8px 0;background:white}
+.lesson input{width:22px;height:22px}.icon{font-size:30px}.matrix{min-width:760px;display:grid;grid-template-columns:170px repeat(5,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.matrix>div{padding:10px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:white}.matrix .head{background:var(--cream);font-weight:700}
+.table{overflow:auto}.stars{font-size:28px;letter-spacing:5px}.auth{max-width:430px;margin:8vh auto;padding:24px}.auth input,.auth textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;margin:6px 0 12px;background:white}
+.notice{padding:10px 12px;background:#fff3cd;border-radius:10px;color:#664d03;margin-bottom:12px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{border-right:0;border-bottom:1px solid var(--line);display:flex;overflow:auto;gap:6px}nav button{min-width:max-content;width:auto;margin:0}main{padding:14px}}
+</style></head><body>
+<div id="login" class="card auth"><h1>📚 My Charlotte Mason Homeschool</h1>
+<p class="muted">Cloud-synced Parent & Child homeschool planner.</p>
+<div class="notice">Enter your Supabase Project URL and Publishable Key. Never use a secret/service-role key here.</div>
+<label>Supabase Project URL</label><input id="sbUrl" placeholder="https://your-project.supabase.co">
+<label>Supabase Publishable Key</label><input id="sbKey" placeholder="sb_publishable_...">
+<button onclick="saveConfig()">Save connection</button><hr>
+<label>Email</label><input id="email" type="email" placeholder="you@example.com">
+<label>Password</label><input id="password" type="password" placeholder="Your password">
+<div class="row"><button onclick="signIn()">Sign in</button><button onclick="signUp()">Create account</button></div>
+<p id="authMsg" class="muted"></p></div>
+
+<div id="app" class="hidden"><header class="top"><div><h1>📚 My Charlotte Mason Homeschool</h1><small id="roleLabel"></small></div>
+<div class="row"><button onclick="toggleRole()" id="roleBtn">🧒 Child View</button><button onclick="signOut()">Sign out</button></div></header>
+<div class="layout"><nav id="nav"></nav><main id="content"></main></div></div>
+
+<script>
+const starterResources=[
+["Bible","The Nursery Book of Bible Stories — Amy Steedman"],["Catechism","Westminster Shorter Catechism"],["Habits","Laying Down the Rails"],
+["Geography","The Seven Little Sisters — Jane Andrews"],["Literature","Winnie-the-Pooh; The House at Pooh Corner"],
+["Poetry","Ring O' Roses; A Child's Garden of Verses"],["Phonics / Reading","McGuffey's"],
+["Panitikan","The Monkey and the Turtle — Jose Rizal"],["Wika at Pagbasa","Tagu-taguan"],
+["Mga Tula at Katutubong Awit","Pakitong-kitong"],["Math","Kinder math curriculum; Arithmetic for Children — Horace Grant"]];
+const lessons=[["Bible","📖","Bible story / narration"],["Phonics / Reading","🔤","McGuffey's reading"],["Math","🔢","Math lesson"],
+["Literature","🧸","Winnie-the-Pooh reading"],["Geography","🌎","The Seven Little Sisters"],["Poetry","🌸","Poem reading / memory"],
+["Habits","🌱","Habit practice"],["Panitikan","🇵🇭","Filipino literature"]];
+const days=["Monday","Tuesday","Wednesday","Thursday","Friday"];
+let cfg=JSON.parse(localStorage.getItem("cm_cfg")||"{}"),user=null,role="parent",page="dashboard";
+if(cfg.url)sbUrl.value=cfg.url;if(cfg.key)sbKey.value=cfg.key;
+function saveConfig(){cfg={url:sbUrl.value.trim().replace(/\/$/,""),key:sbKey.value.trim()};localStorage.setItem("cm_cfg",JSON.stringify(cfg));authMsg.textContent="Connection saved."}
+function headers(){return {"apikey":cfg.key,"Authorization":"Bearer "+localStorage.getItem("cm_token"),"Content-Type":"application/json","Prefer":"return=representation"}}
+async function api(path,opt={}){let r=await fetch(cfg.url+"/rest/v1/"+path,{...opt,headers:{...headers(),...(opt.headers||{})}});if(!r.ok)throw Error(await r.text());return r.status===204?null:r.json()}
+async function auth(path,body){let r=await fetch(cfg.url+"/auth/v1/"+path,{method:"POST",headers:{"apikey":cfg.key,"Content-Type":"application/json"},body:JSON.stringify(body)});let d=await r.json();if(!r.ok)throw Error(d.error_description||d.msg||d.message||"Authentication error");return d}
+async function signIn(){try{saveConfig();let d=await auth("token?grant_type=password",{email:email.value,password:password.value});localStorage.setItem("cm_token",d.access_token);await start()}catch(e){authMsg.textContent=e.message}}
+async function signUp(){try{saveConfig();let d=await auth("signup",{email:email.value,password:password.value});authMsg.textContent=d.access_token?"Account created and signed in.":"Account created. Check your email if confirmation is required."}catch(e){authMsg.textContent=e.message}}
+async function start(){let t=localStorage.getItem("cm_token");if(!t)return;let r=await fetch(cfg.url+"/auth/v1/user",{headers:{"apikey":cfg.key,"Authorization":"Bearer "+t}});if(!r.ok){localStorage.removeItem("cm_token");return}user=await r.json();login.classList.add("hidden");app.classList.remove("hidden");renderNav();renderPage()}
+function signOut(){localStorage.removeItem("cm_token");location.reload()}
+function toggleRole(){role=role==="parent"?"child":"parent";page=role==="parent"?"dashboard":"myday";renderNav();renderPage()}
+function renderNav(){roleLabel.textContent=role==="parent"?"Parent View":"Child View";nav.innerHTML=role==="parent"?`
+<button class="${page==='dashboard'?'active':''}" onclick="go('dashboard')">🏠 Dashboard</button>
+<button class="${page==='matrix'?'active':''}" onclick="go('matrix')">📅 Weekly Matrix</button>
+<button class="${page==='curriculum'?'active':''}" onclick="go('curriculum')">📚 Curriculum</button>
+<button class="${page==='portfolio'?'active':''}" onclick="go('portfolio')">📝 Portfolio</button>
+<button class="${page==='tools'?'active':''}" onclick="go('tools')">🛠 CM Tools</button>`:`
+<button class="${page==='myday'?'active':''}" onclick="go('myday')">🌈 My Day</button>
+<button class="${page==='stars'?'active':''}" onclick="go('stars')">⭐ My Stars</button>`}
+function go(p){page=p;renderNav();renderPage()}
+async function renderPage(){content.innerHTML='<div class="card">Loading…</div>';try{
+if(role==="parent"){if(page==="dashboard")return dashboard();if(page==="matrix")return matrix();if(page==="curriculum")return curriculum();if(page==="portfolio")return portfolio();return tools()}
+return page==="myday"?myday():stars()}catch(e){content.innerHTML='<div class="card"><b>Something went wrong.</b><p>'+esc(e.message)+'</p></div>'}}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+async function getTasks(){return api("cm_tasks?select=*&order=day,subject")}
+async function ensureTasks(){let rows=await getTasks();if(rows.length)return rows;let body=[];for(let d=0;d<5;d++)for(let x of lessons)body.push({user_id:user.id,day:d,subject:x[0],completed:false});return api("cm_tasks",{method:"POST",body:JSON.stringify(body)})}
+async function dashboard(){let t=await ensureTasks(),done=t.filter(x=>x.completed).length,r=await api("cm_resources?select=*"),n=await api("cm_notes?select=*&order=created_at.desc&limit=5");
+content.innerHTML=`<h2>Parent Dashboard</h2><div class="grid"><div class="card"><div class="muted">Completed this week</div><div class="stat">${done}</div></div><div class="card"><div class="muted">Curriculum resources</div><div class="stat">${r.length}</div></div><div class="card"><div class="muted">Portfolio notes</div><div class="stat">${n.length}</div></div></div>
+<div class="card"><h3>🌿 Gentle CM Rhythm</h3><p>Short lessons • narration • living books • habit practice • outdoor observation • movement and rest.</p></div>
+<div class="card"><h3>📝 Parent Note</h3><textarea id="parentNote" rows="4" style="width:100%;padding:12px"></textarea><br><button onclick="saveNoteSetting()">Save note</button></div>`;
+let s=await api("cm_settings?select=*&limit=1");if(s[0])parentNote.value=s[0].parent_note||""}
+async function saveNoteSetting(){let s=await api("cm_settings?select=*&limit=1"),body={user_id:user.id,parent_note:parentNote.value,updated_at:new Date().toISOString()};if(s[0])await api("cm_settings?user_id=eq."+user.id,{method:"PATCH",body:JSON.stringify(body)});else await api("cm_settings",{method:"POST",body:JSON.stringify(body)});alert("Saved.")}
+async function matrix(){let t=await ensureTasks(),h='<div class="card"><h2>📅 Weekly Matrix</h2><div class="table"><div class="matrix"><div class="head">Lesson</div>'+days.map(x=>`<div class="head">${x}</div>`).join('');
+for(let l of lessons){h+=`<div><b>${l[1]} ${l[0]}</b><br><small>${l[2]}</small></div>`;for(let d=0;d<5;d++){let x=t.find(z=>z.day===d&&z.subject===l[0]);h+=`<div><input type="checkbox" ${x&&x.completed?'checked':''} onchange="setTask(${x.id},this.checked)"></div>`}}h+='</div></div></div>';content.innerHTML=h}
+async function setTask(id,val){await api("cm_tasks?id=eq."+id,{method:"PATCH",body:JSON.stringify({completed:val})})}
+async function curriculum(){let r=await api("cm_resources?select=*&order=subject");if(!r.length){await api("cm_resources",{method:"POST",body:JSON.stringify(starterResources.map(x=>({user_id:user.id,subject:x[0],book:x[1]})))});r=await api("cm_resources?select=*&order=subject")}content.innerHTML=`<div class="card"><h2>📚 Curriculum</h2><p class="muted">Your Charlotte Mason curriculum is preloaded.</p>${r.map(x=>`<div class="lesson"><div><b>${esc(x.subject)}</b><br>${esc(x.book)}</div></div>`).join("")}</div>`}
+async function portfolio(){let n=await api("cm_notes?select=*&order=created_at.desc");content.innerHTML=`<div class="card"><h2>📝 Portfolio & Narration</h2><input id="nt" placeholder="Observation title" style="width:100%;padding:12px"><textarea id="nx" rows="4" placeholder="What did Cassie narrate, notice, remember, or practice?" style="width:100%;padding:12px"></textarea><button onclick="addNote()">Save observation</button></div><div class="card">${n.map(x=>`<article><h3>${esc(x.title)}</h3><p>${esc(x.text)}</p><hr></article>`).join("")||'<p class="muted">No observations yet.</p>'}</div>`}
+async function addNote(){if(!nt.value||!nx.value)return;await api("cm_notes",{method:"POST",body:JSON.stringify({user_id:user.id,title:nt.value,text:nx.value})});portfolio()}
+function tools(){content.innerHTML=`<div class="card"><h2>🛠 Charlotte Mason Tools</h2><div class="grid"><div class="card"><h3>✍️ Copywork</h3><p>A gentle, careful hand makes beautiful work.</p><button onclick="printText()">Print</button></div><div class="card"><h3>🗣 Narration</h3><p>Tell me what you remember in your own words.</p></div><div class="card"><h3>🌿 Nature Journal</h3><p>What did you see? What did it do? What changed?</p></div><div class="card"><h3>🎵 Composer Study</h3><p>Listen quietly. What did you notice?</p></div><div class="card"><h3>🖼 Picture Study</h3><p>Look carefully. Hide the picture. Tell what you remember.</p></div><div class="card"><h3>📖 Reading Log</h3><p>Record the book, page, and one thing remembered.</p></div></div></div>`}
+function printText(){let w=open("","_blank");w.document.write("<html><body style='font-family:serif;padding:40px'><h1>Copywork</h1><p>A gentle, careful hand makes beautiful work.</p><br><br><br><hr></body></html>");w.print()}
+async function myday(){let t=await ensureTasks(),d=Math.min((new Date().getDay()+6)%7,4),rows=t.filter(x=>x.day===d);content.innerHTML=`<h2>🌈 Today's Quests</h2><p class="muted">Small steps, happy learning.</p>${rows.map(x=>{let l=lessons.find(y=>y[0]===x.subject)||[x.subject,"📘",""];return `<div class="card lesson"><span class="icon">${l[1]}</span><div style="flex:1"><h3>${esc(x.subject)}</h3><p>${esc(l[2])}</p></div><input type="checkbox" ${x.completed?'checked':''} onchange="setTask(${x.id},this.checked)"></div>`}).join("")}`}
+async function stars(){let t=await ensureTasks(),done=t.filter(x=>x.completed).length,s=Math.min(5,Math.floor(done/5));content.innerHTML=`<div class="card"><h2>⭐ My Stars</h2><div class="stars">${"★".repeat(s)}${"☆".repeat(5-s)}</div><p>You have completed <b>${done}</b> lessons.</p><p class="muted">Every little step counts!</p></div><div class="card"><h3>🎉 Keep going!</h3><p>Read. Tell. Notice. Practice. Rest.</p></div>`}
+start();
+</script></body></html>
