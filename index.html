@@ -28,7 +28,15 @@ main{padding:24px;max-width:1200px;width:100%;margin:auto}.card{background:var(-
 <label>Email</label><input id="email" type="email" placeholder="you@example.com">
 <label>Password</label><input id="password" type="password" placeholder="Your password">
 <div class="row"><button onclick="signIn()">Sign in</button><button onclick="signUp()">Create account</button></div>
+<button onclick="requestPasswordReset()" style="margin-top:8px;background:#f3f0e8;color:var(--ink)">Forgot / reset password</button>
 <p id="authMsg" class="muted"></p></div>
+
+<div id="reset" class="card auth hidden"><h1>🔐 Reset Your Password</h1>
+<p class="muted">Choose a new password for your Charlotte Mason Homeschool account.</p>
+<label>New password</label><input id="newPassword" type="password" placeholder="New password">
+<label>Confirm new password</label><input id="confirmPassword" type="password" placeholder="Confirm new password">
+<div class="row"><button onclick="updatePassword()">Update password</button><button onclick="cancelReset()" style="background:#f3f0e8;color:var(--ink)">Cancel</button></div>
+<p id="resetMsg" class="muted"></p></div>
 
 <div id="app" class="hidden"><header class="top"><div><h1>📚 My Charlotte Mason Homeschool</h1><small id="roleLabel"></small></div>
 <div class="row"><button onclick="toggleRole()" id="roleBtn">🧒 Child View</button><button onclick="signOut()">Sign out</button></div></header>
@@ -47,13 +55,18 @@ const lessons=[["Bible","📖","Bible story / narration"],["Phonics / Reading","
 const days=["Monday","Tuesday","Wednesday","Thursday","Friday"];
 let cfg=JSON.parse(localStorage.getItem("cm_cfg")||"{}"),user=null,role="parent",page="dashboard";
 if(cfg.url)sbUrl.value=cfg.url;if(cfg.key)sbKey.value=cfg.key;
-function saveConfig(){cfg={url:sbUrl.value.trim().replace(/\/$/,""),key:sbKey.value.trim()};localStorage.setItem("cm_cfg",JSON.stringify(cfg));authMsg.textContent="Connection saved."}
+function saveConfig(){cfg={url:sbUrl.value.trim().replace(/\/$/,""),key:sbKey.value.trim()};localStorage.setItem("cm_cfg",JSON.stringify(cfg));if(typeof authMsg!=="undefined")authMsg.textContent="Connection saved."}
 function headers(){return {"apikey":cfg.key,"Authorization":"Bearer "+localStorage.getItem("cm_token"),"Content-Type":"application/json","Prefer":"return=representation"}}
 async function api(path,opt={}){let r=await fetch(cfg.url+"/rest/v1/"+path,{...opt,headers:{...headers(),...(opt.headers||{})}});if(!r.ok)throw Error(await r.text());return r.status===204?null:r.json()}
 async function auth(path,body){let r=await fetch(cfg.url+"/auth/v1/"+path,{method:"POST",headers:{"apikey":cfg.key,"Content-Type":"application/json"},body:JSON.stringify(body)});let d=await r.json();if(!r.ok)throw Error(d.error_description||d.msg||d.message||"Authentication error");return d}
 async function signIn(){try{saveConfig();let d=await auth("token?grant_type=password",{email:email.value,password:password.value});localStorage.setItem("cm_token",d.access_token);await start()}catch(e){authMsg.textContent=e.message}}
 async function signUp(){try{saveConfig();let d=await auth("signup",{email:email.value,password:password.value});authMsg.textContent=d.access_token?"Account created and signed in.":"Account created. Check your email if confirmation is required."}catch(e){authMsg.textContent=e.message}}
-async function start(){let t=localStorage.getItem("cm_token");if(!t)return;let r=await fetch(cfg.url+"/auth/v1/user",{headers:{"apikey":cfg.key,"Authorization":"Bearer "+t}});if(!r.ok){localStorage.removeItem("cm_token");return}user=await r.json();login.classList.add("hidden");app.classList.remove("hidden");renderNav();renderPage()}
+async function requestPasswordReset(){try{saveConfig();if(!email.value.trim()){authMsg.textContent="Enter your email address first.";return}let r=await fetch(cfg.url+"/auth/v1/recover",{method:"POST",headers:{"apikey":cfg.key,"Content-Type":"application/json"},body:JSON.stringify({email:email.value.trim(),redirect_to:location.href.split('#')[0]})});let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error_description||d.msg||d.message||"Could not send reset email");authMsg.textContent="Password reset email sent. Check your inbox."}catch(e){authMsg.textContent=e.message}}
+async function start(){let t=localStorage.getItem("cm_token");if(!t)return;let r=await fetch(cfg.url+"/auth/v1/user",{headers:{"apikey":cfg.key,"Authorization":"Bearer "+t}});if(!r.ok){localStorage.removeItem("cm_token");return}user=await r.json();login.classList.add("hidden");reset.classList.add("hidden");app.classList.remove("hidden");renderNav();renderPage()}
+function showResetScreen(msg){login.classList.add("hidden");app.classList.add("hidden");reset.classList.remove("hidden");resetMsg.textContent=msg||"Enter a new password below."}
+async function updatePassword(){try{let a=newPassword.value,b=confirmPassword.value;if(!a||a.length<6){resetMsg.textContent="Please use a password with at least 6 characters.";return}if(a!==b){resetMsg.textContent="The passwords do not match.";return}let t=localStorage.getItem("cm_token");if(!t){resetMsg.textContent="This reset link is missing or has expired. Request a new reset email.";return}let r=await fetch(cfg.url+"/auth/v1/user",{method:"PUT",headers:{"apikey":cfg.key,"Authorization":"Bearer "+t,"Content-Type":"application/json"},body:JSON.stringify({password:a})});let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error_description||d.msg||d.message||"Could not update password");resetMsg.textContent="Password updated successfully! Returning to your homeschool planner…";setTimeout(()=>start(),900)}catch(e){resetMsg.textContent=e.message}}
+function cancelReset(){localStorage.removeItem("cm_token");reset.classList.add("hidden");login.classList.remove("hidden");resetMsg.textContent=""}
+function handleRecoveryLink(){try{if(!cfg.url||!cfg.key)return false;let hash=new URLSearchParams(location.hash.replace(/^#/,'').replace(/^\?/ ,''));let type=hash.get('type');let access=hash.get('access_token');if(type==='recovery'&&access){localStorage.setItem('cm_token',access);history.replaceState(null,document.title,location.pathname+location.search);showResetScreen();return true}return false}catch(e){return false}}
 function signOut(){localStorage.removeItem("cm_token");location.reload()}
 function toggleRole(){role=role==="parent"?"child":"parent";page=role==="parent"?"dashboard":"myday";renderNav();renderPage()}
 function renderNav(){roleLabel.textContent=role==="parent"?"Parent View":"Child View";nav.innerHTML=role==="parent"?`
@@ -87,5 +100,5 @@ function tools(){content.innerHTML=`<div class="card"><h2>🛠 Charlotte Mason T
 function printText(){let w=open("","_blank");w.document.write("<html><body style='font-family:serif;padding:40px'><h1>Copywork</h1><p>A gentle, careful hand makes beautiful work.</p><br><br><br><hr></body></html>");w.print()}
 async function myday(){let t=await ensureTasks(),d=Math.min((new Date().getDay()+6)%7,4),rows=t.filter(x=>x.day===d);content.innerHTML=`<h2>🌈 Today's Quests</h2><p class="muted">Small steps, happy learning.</p>${rows.map(x=>{let l=lessons.find(y=>y[0]===x.subject)||[x.subject,"📘",""];return `<div class="card lesson"><span class="icon">${l[1]}</span><div style="flex:1"><h3>${esc(x.subject)}</h3><p>${esc(l[2])}</p></div><input type="checkbox" ${x.completed?'checked':''} onchange="setTask(${x.id},this.checked)"></div>`}).join("")}`}
 async function stars(){let t=await ensureTasks(),done=t.filter(x=>x.completed).length,s=Math.min(5,Math.floor(done/5));content.innerHTML=`<div class="card"><h2>⭐ My Stars</h2><div class="stars">${"★".repeat(s)}${"☆".repeat(5-s)}</div><p>You have completed <b>${done}</b> lessons.</p><p class="muted">Every little step counts!</p></div><div class="card"><h3>🎉 Keep going!</h3><p>Read. Tell. Notice. Practice. Rest.</p></div>`}
-start();
+if(!handleRecoveryLink()) start();
 </script></body></html>
