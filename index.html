@@ -130,9 +130,76 @@ content.innerHTML=`<h2>Parent Dashboard</h2><div class="grid"><div class="card">
 <div class="card"><h3>📝 Parent Note</h3><textarea id="parentNote" rows="4" style="width:100%;padding:12px"></textarea><br><button onclick="saveNoteSetting()">Save note</button></div>`;
 let s=await api("cm_settings?select=*&limit=1");if(s[0])parentNote.value=s[0].parent_note||""}
 async function saveNoteSetting(){let s=await api("cm_settings?select=*&limit=1"),body={user_id:user.id,parent_note:parentNote.value,updated_at:new Date().toISOString()};if(s[0])await api("cm_settings?user_id=eq."+user.id,{method:"PATCH",body:JSON.stringify(body)});else await api("cm_settings",{method:"POST",body:JSON.stringify(body)});alert("Saved.")}
-async function matrix(){let t=await ensureTasks(),h='<div class="card"><h2>📅 Weekly Matrix</h2><div class="table"><div class="matrix"><div class="head">Lesson</div>'+days.map(x=>`<div class="head">${x}</div>`).join('');
-for(let l of lessons){h+=`<div><b>${l[1]} ${l[0]}</b><br><small>${l[2]}</small></div>`;for(let d=0;d<5;d++){let x=t.find(z=>z.day===d&&z.subject===l[0]);h+=`<div><input type="checkbox" ${x&&x.completed?'checked':''} onchange="setTask(${x.id},this.checked)"></div>`}}h+='</div></div></div>';content.innerHTML=h}
+
+async function matrix(){
+  let t=await ensureTasks();
+  let subjects=[...new Set([...lessons.map(x=>x[0]),...t.map(x=>x.subject)])];
+
+  let h='<div class="card"><h2>📅 Weekly Matrix</h2>'+
+    '<div class="row" style="margin:12px 0">'+
+    '<input id="newLesson" placeholder="New lesson title" style="padding:10px;flex:1;min-width:180px">'+
+    '<select id="newLessonDay" style="padding:10px;border:1px solid var(--line);border-radius:10px">'+
+    days.map((x,i)=>`<option value="${i}">${x}</option>`).join('')+
+    '</select><button onclick="addLesson()">Add lesson</button></div>'+
+    '<p id="lessonMsg" class="muted"></p>'+
+    '<div class="table"><div class="matrix"><div class="head">Lesson</div>'+
+    days.map(x=>`<div class="head">${x}</div>`).join('');
+
+  for(let subject of subjects){
+    let l=lessons.find(x=>x[0]===subject)||[subject,"📘","Custom lesson"];
+    h+=`<div><b>${l[1]} ${esc(subject)}</b><br><small>${esc(l[2])}</small></div>`;
+
+    for(let d=0;d<5;d++){
+      let x=t.find(z=>z.day===d&&z.subject===subject);
+      h+=x
+        ?`<div><input type="checkbox" ${x.completed?'checked':''} onchange="setTask(${x.id},this.checked)"></div>`
+        :'<div></div>';
+    }
+  }
+
+  h+='</div></div></div>';
+  content.innerHTML=h;
+}
 async function setTask(id,val){await api("cm_tasks?id=eq."+id,{method:"PATCH",body:JSON.stringify({completed:val})})}
+  
+async function addLesson(){
+  let title=document.getElementById("newLesson").value.trim();
+  let day=Number(document.getElementById("newLessonDay").value);
+  let msg=document.getElementById("lessonMsg");
+
+  if(!title){
+    msg.textContent="Please enter a lesson title.";
+    return;
+  }
+
+  try{
+    let existing=await api(
+      "cm_tasks?select=id&subject=eq."+encodeURIComponent(title)+"&day=eq."+day
+    );
+
+    if(existing.length){
+      msg.textContent="That lesson already exists on this day.";
+      return;
+    }
+
+    await api("cm_tasks",{
+      method:"POST",
+      body:JSON.stringify({
+        user_id:user.id,
+        day:day,
+        subject:title,
+        completed:false
+      })
+    });
+
+    await matrix();
+
+    let newMsg=document.getElementById("lessonMsg");
+    if(newMsg)newMsg.textContent="Lesson saved successfully!";
+  }catch(e){
+    msg.textContent="Could not save lesson: "+e.message;
+  }
+}
 async function curriculum(){let r=await api("cm_resources?select=*&order=subject");if(!r.length){await api("cm_resources",{method:"POST",body:JSON.stringify(starterResources.map(x=>({user_id:user.id,subject:x[0],book:x[1]})))});r=await api("cm_resources?select=*&order=subject")}content.innerHTML=`<div class="card"><h2>📚 Curriculum</h2><p class="muted">Your Charlotte Mason curriculum is preloaded.</p>${r.map(x=>`<div class="lesson"><div><b>${esc(x.subject)}</b><br>${esc(x.book)}</div></div>`).join("")}</div>`}
 async function portfolio(){let n=await api("cm_notes?select=*&order=created_at.desc");content.innerHTML=`<div class="card"><h2>📝 Portfolio & Narration</h2><input id="nt" placeholder="Observation title" style="width:100%;padding:12px"><textarea id="nx" rows="4" placeholder="What did Cassie narrate, notice, remember, or practice?" style="width:100%;padding:12px"></textarea><button onclick="addNote()">Save observation</button></div><div class="card">${n.map(x=>`<article><h3>${esc(x.title)}</h3><p>${esc(x.text)}</p><hr></article>`).join("")||'<p class="muted">No observations yet.</p>'}</div>`}
 async function addNote(){if(!nt.value||!nx.value)return;await api("cm_notes",{method:"POST",body:JSON.stringify({user_id:user.id,title:nt.value,text:nx.value})});portfolio()}
